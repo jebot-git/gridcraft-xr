@@ -1,4 +1,4 @@
-> **DomeD native port:** see [native/domed](native/domed/README.md) for the shared bitmap/GPU frontend and build instructions. Original upstream documentation follows.
+> **Part of de-xr:** this downstream fork provides GridCraft for [DomeD](https://github.com/jebot-git/DomeD) with a native FLTK frontend. See [native/domed](native/domed/README.md) for the shared bitmap/GPU frontend and build instructions. Original upstream documentation follows.
 
 <p align="center">
   <a href="https://getartcraft.com/">

@@ -1,5 +1,8 @@
 # GridCraft for DomeD
 
+This downstream fork is part of the **de-xr** desktop suite. The default `domed`
+branch provides the native FLTK frontend for [DomeD](https://github.com/jebot-git/DomeD).
+
 This branch ports the pinned Storytold engine to the shared DomeD native base.
 The upstream application and document engine remain authoritative. The native
 frontend uses DomeD's FLTK/GPU window, bitmap UI fonts, universal menu and
