@@ -1,0 +1,7 @@
+{
+  "application": "gridcraft",
+  "repository": "https://github.com/jebot-git/dome-craft-base.git",
+  "revision": "5afad09884fae518dd79c528c762859a1e9c31f8",
+  "upstream_revision": "ff9f4b8acebc7332d6a59e352fa1b7686c910b31",
+  "cargo_args": []
+}

@@ -14,6 +14,12 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![forbid(unsafe_code)]
 
+pub mod bitmap {
+    include!(concat!(env!("DOME_OFFICE_COMMON"), "/bitmap.rs"));
+}
+mod bitmap_harf {
+    include!(concat!(env!("DOME_OFFICE_COMMON"), "/harf.rs"));
+}
 mod metrics;
 mod symbol;
 
@@ -168,6 +174,12 @@ impl Font {
 
     /// Advance width of a character in 1/1000 em.
     pub fn char_width(self, c: char) -> u16 {
+        if bitmap::configured() && matches!(unicode_bidi::bidi_class(c), unicode_bidi::BidiClass::NSM | unicode_bidi::BidiClass::BN) {
+            return 0;
+        }
+        if let Ok(font) = bitmap::active() {
+            return ((f64::from(font.advance(font.gid(c))) * 1000. / f64::from(font.pixels)).ceil().clamp(0., 65535.)) as u16;
+        }
         if self == Font::Symbol {
             return symbol_code(c).and_then(symbol_width).unwrap_or(500);
         }
@@ -201,6 +213,9 @@ impl Font {
 
 /// Width of `text` in points when set in `font` at `size` points.
 pub fn text_width(font: Font, size: f32, text: &str) -> f32 {
+    if let Ok(face) = bitmap::active() {
+        return bitmap_harf::line(&face, text).iter().map(|g| g.advance as f32 * g.units_scale as f32).sum::<f32>() * size / face.pixels as f32;
+    }
     // u64: a u32 sum overflows for ~8 million characters.
     let units: u64 = text.chars().map(|c| u64::from(font.char_width(c))).sum();
     units as f32 * size / 1000.0
@@ -608,6 +623,31 @@ impl Page {
     /// system) about its baseline origin.
     pub fn text_rotated(&mut self, origin: Point, size: f32, font: Font, color: Rgb, text: &str, angle: f32) {
         if text.is_empty() || !extent(size) || !finite(&[origin.x, origin.y]) {
+            return;
+        }
+        if let Ok(face) = bitmap::active() {
+            let (sn, cs) = if angle.is_finite() { angle.sin_cos() } else { (0., 1.) };
+            let mut stream =
+                format!("q\n{} {} {} {} {} {} cm\n{}\n", n(cs), n(-sn), n(sn), n(cs), n(origin.x), n(self.y(origin.y)), rgb_op(color, false));
+            let mut pen = 0.;
+            for glyph in bitmap_harf::line(&face, text) {
+                let gid = glyph.gid;
+                let source = glyph.source.as_deref().unwrap_or(&face);
+                let glyph_scale = f64::from(size) / f64::from(source.pixels);
+                for [x, y, w, h] in source.rectangles(gid) {
+                    let _ = writeln!(
+                        stream,
+                        "{} {} {} {} re f",
+                        n((pen + (x + f64::from(glyph.x)) * glyph_scale) as f32),
+                        n((-(y + h + f64::from(glyph.y)) * glyph_scale) as f32),
+                        n((w * glyph_scale) as f32),
+                        n((h * glyph_scale) as f32)
+                    );
+                }
+                pen += f64::from(glyph.advance) * glyph_scale;
+            }
+            stream.push_str("Q");
+            self.op(&stream);
             return;
         }
         let fi = font.index();

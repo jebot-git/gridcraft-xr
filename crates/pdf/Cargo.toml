@@ -10,3 +10,5 @@ readme = "README.md"
 workspace = true
 
 [dependencies]
+harfrust = "=0.13.3"
+unicode-bidi = "=0.3.18"

@@ -113,6 +113,7 @@ const UNTARGETED: &[&str] = &["list_commands", "list_functions", "list_windows",
 /// `doc` id (from list_windows) and default to the active window.
 pub fn tool_definitions() -> Vec<Value> {
     let mut tools = base_tool_definitions();
+    tools.push(json!({"name":"domed_bitmap_status","description":"DomeD bitmap provider identity and strike metrics","inputSchema":{"type":"object","properties":{},"additionalProperties":false},"annotations":{"readOnlyHint":true}}));
     for t in &mut tools {
         if UNTARGETED.iter().any(|n| t["name"] == *n) {
             continue;
@@ -698,6 +699,12 @@ impl Backend for Targeted<'_> {
 
 /// Runs one tool. Failures become `isError` results with a readable message.
 pub fn call_tool(b: &mut dyn Backend, name: &str, args: &Value) -> ToolResult {
+    if name == "domed_bitmap_status" {
+        return match gridcraft_engine::bitmap_status() {
+            Ok(value) => ToolResult::json(&value),
+            Err(error) => ToolResult::error(error),
+        };
+    }
     let empty = Map::new();
     let a = match args {
         Value::Object(o) => o,

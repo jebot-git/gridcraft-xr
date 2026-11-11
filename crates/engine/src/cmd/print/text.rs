@@ -12,7 +12,12 @@ const MAX_WRAP_LINES: usize = 2000;
 /// character is measured once: re-measuring the line for every word, or the rest of an
 /// over-long word for every piece cut from it, made a long paragraph or word quadratic.
 pub(super) fn wrap_lines(text: &str, font: Font, size: f32, width: f32) -> Vec<String> {
-    let units_of = |s: &str| -> u64 { s.chars().map(|c| u64::from(font.char_width(c))).sum() };
+    let units_of = |s: &str| -> u64 {
+        if gridcraft_pdf::bitmap::configured() {
+            return gridcraft_pdf::text_width(font, 1000., s).max(0.).ceil() as u64;
+        }
+        s.chars().map(|c| u64::from(font.char_width(c))).sum()
+    };
     let fits = |units: u64| units as f32 * size / 1000.0 <= width;
     let space = units_of(" ");
     let mut out = Vec::new();
@@ -152,6 +157,15 @@ pub(super) fn draw_text(pg: &mut Page, b: &Block, placement: TextPlacement<'_>) 
         return;
     }
     let st = &l.style;
+    let _bitmap_family = gridcraft_pdf::bitmap::select_style(
+        &st.font.name,
+        match (st.font.bold, st.font.italic) {
+            (true, true) => "Bold Italic",
+            (true, false) => "Bold",
+            (false, true) => "Italic",
+            _ => "Regular",
+        },
+    );
     let mut size = st.font.size.clamp(1.0, 409.0) * b.scale;
     let font = font_for(st);
     let pad = PAD_PX * b.k;

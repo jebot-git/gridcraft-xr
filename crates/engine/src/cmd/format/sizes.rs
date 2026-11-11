@@ -127,6 +127,10 @@ pub fn chars_to_points(c: f64) -> f64 {
 /// Approximate text width in points for autofit (no font metrics in the engine: average glyph
 /// widths for the default font; a front end with fonts measures instead, see `Session::text_width`).
 pub fn approx_text_width(text: &str, size: f32, bold: bool) -> f32 {
+    if let Ok(font) = gridcraft_pdf::bitmap::from_env() {
+        let _ = font;
+        return gridcraft_pdf::text_width(gridcraft_pdf::Font::Helvetica, size, text) * 96. / 72.;
+    }
     let mut w = 0.0;
     for c in text.chars() {
         w += match c {

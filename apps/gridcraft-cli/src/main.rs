@@ -66,6 +66,10 @@ fn stdout_failed(e: std::io::Error) -> ! {
 }
 
 fn main() -> ExitCode {
+    if let Err(error) = gridcraft_engine::validate_bitmap() {
+        eprintln!("DomeD bitmap font: {error}");
+        return ExitCode::FAILURE;
+    }
     // A confined launcher run (and its probes) comes first, before anything else starts.
     let raw: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
     if let Some(code) = gridcraft_sandbox::handle_args(&raw) {

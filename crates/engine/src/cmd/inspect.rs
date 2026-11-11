@@ -8,7 +8,7 @@ use super::{CommandSpec, EngineError, Result, Session, always, bad, bool_param, 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         cmd!(query "document.inspect", "Inspect Workbook", [], None, "{} → sheets, selection, names, tables, charts, dirty, trust (local|fromFile), history", has_doc, inspect),
-        cmd!(query "sheet.read", "Read Range", [], None, "{range?: \"A1:D10\" (default: used range), sheet?, formulas?: bool, formatted?: bool} → rows of values", has_doc, read),
+        cmd!(query "sheet.read", "Read Range", [], None, "{range?: \"A1:D10\" (default: used range), sheet?, formulas?: bool, formatted?: bool, styles?: bool (bounded native viewport)} → rows of values", has_doc, read),
         cmd!(query "cell.get", "Get Cell", [], None, "{cell?, sheet?} → value, formula, display text, style, comment, link, python {code, output, typeName, preview, stale}", has_doc, cell_get),
         cmd!(query "selection.stats", "Selection Statistics", [], None, "{} → count, sum, average, min, max", has_doc, sel_stats),
         cmd!(query "history.list", "Undo History", [], None, "{} → undo/redo labels, grouping (an undo group is open)", has_doc, history),
@@ -97,9 +97,18 @@ fn read(s: &mut Session, p: &Json) -> Result<Json> {
     }
     let formulas = bool_param(p, "formulas").unwrap_or(false);
     let formatted = bool_param(p, "formatted").unwrap_or(false);
+    let with_styles = bool_param(p, "styles").unwrap_or(false);
+    if with_styles && r.count() > 4096 {
+        return Err(bad("sheet.read", "styled viewport exceeds 4096 cells"));
+    }
+    let mut style_rows = Vec::new();
+    let mut numeric_rows = Vec::new();
+    let mut palette = serde_json::Map::new();
     let mut rows = Vec::with_capacity(r.height() as usize);
     for row in r.start.row..=r.end.row {
         let mut cols = Vec::with_capacity(r.width() as usize);
+        let mut styles = Vec::new();
+        let mut numeric = Vec::new();
         for col in r.start.col..=r.end.col {
             let c = CellRef::new(row, col);
             let v = if formulas && let Some(f) = sh.cell(c).and_then(|x| x.formula.as_ref()) {
@@ -110,10 +119,37 @@ fn read(s: &mut Session, p: &Json) -> Result<Json> {
                 value_json(&sh.value(c))
             };
             cols.push(v);
+            if with_styles {
+                numeric.push(matches!(sh.value(c), Value::Number(_)));
+                let id = sh.style_id(c);
+                styles.push(json!(id.0));
+                let key = id.0.to_string();
+                if !palette.contains_key(&key) {
+                    let style = d.wb.styles.get(id);
+                    let mut data = serde_json::to_value(style).map_err(|e| bad("sheet.read", &e.to_string()))?;
+                    data["foreground"] = json!(style.font.color.hex(&d.wb.theme).unwrap_or_else(|| "#000000".into()));
+                    data["background"] =
+                        if style.fill.pattern != gridcraft_model::PatternType::None { json!(style.fill.fg.hex(&d.wb.theme)) } else { Json::Null };
+                    data["borderColors"] = json!({"top":style.borders.top.color.hex(&d.wb.theme),"bottom":style.borders.bottom.color.hex(&d.wb.theme),"left":style.borders.left.color.hex(&d.wb.theme),"right":style.borders.right.color.hex(&d.wb.theme)});
+                    palette.insert(key, data);
+                }
+            }
         }
         rows.push(Json::Array(cols));
+        if with_styles {
+            style_rows.push(Json::Array(styles));
+            numeric_rows.push(numeric);
+        }
     }
-    Ok(json!({"range": r.a1(), "sheet": sh.name, "values": rows}))
+    let mut result = json!({"range": r.a1(), "sheet": sh.name, "values": rows});
+    if with_styles {
+        result["styles"] = json!(style_rows);
+        result["stylePalette"] = Json::Object(palette);
+        result["numeric"] = json!(numeric_rows);
+        result["rowHeights"] = json!((r.start.row..=r.end.row).map(|row| sh.row_height(row)).collect::<Vec<_>>());
+        result["columnWidths"] = json!((r.start.col..=r.end.col).map(|col| sh.col_width(col)).collect::<Vec<_>>());
+    }
+    Ok(result)
 }
 
 fn cell_get(s: &mut Session, p: &Json) -> Result<Json> {
@@ -172,4 +208,23 @@ fn list_commands(s: &mut Session, p: &Json) -> Result<Json> {
         .map(|c| serde_json::to_value(c).unwrap_or_default())
         .collect();
     Ok(Json::Array(v))
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod dome_viewport_tests {
+    #[test]
+    fn styled_read_is_bounded_and_matches_cell_style() {
+        let mut session = super::Session::new();
+        session.execute("file.new", serde_json::json!({})).unwrap();
+        session.execute("cell.set", serde_json::json!({"cell":"B2","input":"42"})).unwrap();
+        session.execute("home.bold", serde_json::json!({"range":"B2","on":true})).unwrap();
+        let cell = session.execute("cell.get", serde_json::json!({"cell":"B2"})).unwrap();
+        let view = session.execute("sheet.read", serde_json::json!({"range":"A1:C3","styles":true})).unwrap();
+        let key = view["styles"][1][1].as_u64().unwrap().to_string();
+        assert_eq!(view["stylePalette"][&key]["font"], cell["style"]["font"]);
+        assert_eq!(view["stylePalette"][&key]["font"]["bold"], true);
+        assert!(session.execute("sheet.read", serde_json::json!({"range":"A1:A5000","styles":true})).is_err());
+        assert!(session.execute("sheet.read", serde_json::json!({"range":"A1:C3"})).unwrap().get("stylePalette").is_none());
+    }
 }

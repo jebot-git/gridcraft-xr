@@ -1,3 +1,5 @@
+> **DomeD native port:** see [native/domed](native/domed/README.md) for the shared bitmap/GPU frontend and build instructions. Original upstream documentation follows.
+
 <p align="center">
   <a href="https://getartcraft.com/">
     <picture>

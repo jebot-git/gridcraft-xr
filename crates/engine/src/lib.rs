@@ -535,7 +535,14 @@ pub struct Session {
 
 impl Session {
     pub fn new() -> Session {
-        Session::default()
+        let mut session = Session::default();
+        if gridcraft_pdf::bitmap::configured() {
+            session.text_width = Some(std::sync::Arc::new(|text, font, _| {
+                let _family = gridcraft_pdf::bitmap::select_family(&font.name);
+                gridcraft_pdf::text_width(gridcraft_pdf::Font::Helvetica, font.size, text)
+            }));
+        }
+        session
     }
     pub fn documents(&self) -> &[DocState] {
         &self.docs
@@ -1134,3 +1141,16 @@ pub fn cell(r: u32, c: u32) -> CellRef {
 
 #[cfg(test)]
 mod tests;
+
+/// Validate the downstream bitmap strike before opening documents.
+pub fn validate_bitmap() -> std::result::Result<(), String> {
+    gridcraft_pdf::bitmap::from_env().map(|_| ())
+}
+
+/// Runtime attestation for the private DomeD transport.
+pub fn bitmap_status() -> std::result::Result<serde_json::Value, String> {
+    let font = gridcraft_pdf::bitmap::from_env()?;
+    Ok(
+        serde_json::json!({"provider":"domed-bdf-v1","family":font.family,"pixels":font.pixels,"glyphs":font.glyphs.len(),"outlineFallback":false,"shaping":"harfrust-bdf","families":gridcraft_pdf::bitmap::families()}),
+    )
+}
